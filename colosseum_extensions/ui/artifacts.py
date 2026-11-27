@@ -73,7 +73,7 @@ def _matches_logical_name(dir_name: str, logical_name: str) -> bool:
     sanitized = sanitize_logical_name(logical_name)
     if dir_name.endswith(f"_{sanitized}"):
         return True
-    pattern = rf"^.*_{re.escape(sanitized)}(?:_\d+)?(?:-(?:pass|fail)(?:_\d+)?)?$"
+    pattern = rf"^.*_{re.escape(sanitized)}(?:_\d+)?(?:-(?:pass|fail|incomplete)(?:_\d+)?)?$"
     return bool(re.match(pattern, dir_name))
 
 
@@ -278,8 +278,8 @@ def display_status(summary: dict[str, Any] | None) -> str:
     if summary is None:
         return "incomplete"
     overall = str(summary.get("overall_result") or "")
-    if overall.upper() == "ERROR":
-        return "ERROR"
+    if overall.upper() in {"ERROR", "INCOMPLETE"}:
+        return overall.upper()
     if summary.get("suite_error"):
         return "ERROR"
     reason = str(summary.get("suite_fail_reason") or "")
@@ -306,6 +306,8 @@ def _append_suite_metrics(lines: list[str], summary: dict[str, Any]) -> None:
     passed = slot_counts.get("pass", 0)
     failed = slot_counts.get("fail", 0)
     lines.append(f"Test slots: {total} ({passed} pass, {failed} fail)")
+    if incomplete := slot_counts.get("incomplete"):
+        lines.append(f"Incomplete test slots: {incomplete}")
     pass_percent = slot_counts.get("pass_percent")
     fail_percent = slot_counts.get("fail_percent")
     if isinstance(pass_percent, (int, float)) and isinstance(fail_percent, (int, float)):
@@ -376,6 +378,8 @@ def _emit_counts(lines: list[str], summary: dict[str, Any]) -> None:
 
 
 def _emit_flags(lines: list[str], summary: dict[str, Any]) -> None:
+    if reason := summary.get("interruption_reason"):
+        lines.append(str(reason))
     if summary.get("suite_error"):
         lines.append(f"Suite error: {summary.get('suite_error')}")
     if summary.get("teardown_failed"):
