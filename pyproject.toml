@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "colosseum-extensions"
-version = "0.4.0"
+version = "0.4.1"
 description = "Optional extensions for Colosseum, including the desktop runner"
 requires-python = ">=3.10"
 license = "MIT"
