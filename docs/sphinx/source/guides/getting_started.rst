@@ -9,7 +9,7 @@ Requirements
 ------------
 
 * Python 3.10 or newer
-* ``colosseum-core`` 0.18.11 or newer in the 0.18 series, in the same virtual environment
+* ``colosseum-core`` 0.18.15 or newer in the 0.18 series, in the same virtual environment
 * A display (or ``QT_QPA_PLATFORM=offscreen`` for headless smoke only)
 
 Install

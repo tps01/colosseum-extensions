@@ -2,7 +2,7 @@ import os
 import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from colosseum_extensions.ui.app import Inspector
 from colosseum_extensions.ui.execution import Execution, RunRequest
@@ -46,6 +46,10 @@ def test_process_lifecycle(tmp_path):
     worker.stop()
     wait(app, lambda: len(results) == 3)
     assert worker.state == "Stopped"
+    assert results[-1] == 1
+    run_dir, = (tmp_path / "outputs").glob("*-incomplete")
+    assert '"overall_result": "INCOMPLETE"' in (run_dir / "summary.json").read_text(encoding="utf-8")
+    assert not worker.stop_marker.exists()
     worker.start(request)
     worker.stop()
     wait(app, lambda: len(results) == 4)
@@ -89,6 +93,55 @@ def test_suite(tmp_path):
 def test_dry_run_argument():
     for kind in ("run", "run-suite"):
         assert "--dry-run" in RunRequest(kind, "sample", dry_run=True).arguments()
+
+
+def test_stop_falls_back_to_force_kill(tmp_path, monkeypatch):
+    monkeypatch.setattr("colosseum_extensions.ui.execution._STOP_TIMEOUT_MS", 500)
+    app = QApplication.instance() or QApplication([])
+    worker = Execution(tmp_path)
+    output = []
+    worker.output.connect(output.append)
+    script = tmp_path / "unresponsive.py"
+    script.write_text(
+        "import signal, time\ndef main():\n"
+        "    signal.signal(signal.SIGINT, signal.SIG_IGN)\n"
+        "    print('ignoring interrupt', flush=True)\n    time.sleep(60)\n",
+        encoding="utf-8",
+    )
+    worker.start(RunRequest("run", str(script)))
+    wait(app, lambda: "ignoring interrupt" in "".join(output))
+    worker.stop()
+    wait(app, lambda: not worker.active)
+    assert worker.state == "Force stopped"
+    assert not worker.stop_marker.exists()
+
+
+def test_close_cancels_active_suite_without_teardown(tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    window = Inspector(tmp_path)
+    root = tmp_path
+    (root / "slow.py").write_text(
+        "import time\ndef main():\n    print('active suite case', flush=True)\n    time.sleep(60)\n",
+        encoding="utf-8",
+    )
+    (root / "teardown.py").write_text(
+        "from pathlib import Path\ndef main():\n    Path('teardown-ran').touch()\n",
+        encoding="utf-8",
+    )
+    suite = root / "suite.toml"
+    suite.write_text('name = "close"\ntests = ["slow.py"]\nteardown = ["teardown.py"]\n', encoding="utf-8")
+    output = []
+    window.execution.output.connect(output.append)
+    assert window.execution.start(RunRequest("run-suite", str(suite)))
+    wait(app, lambda: "active suite case" in "".join(output) or not window.execution.active)
+    assert "active suite case" in "".join(output), "".join(output)
+    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.Yes)
+    window.close()
+    wait(app, lambda: not window.execution.active)
+    assert window.execution.state == "Stopped"
+    assert not (root / "teardown-ran").exists()
+    run_dir, = (root / "outputs").glob("*-incomplete")
+    assert '"overall_result": "INCOMPLETE"' in (run_dir / "summary.json").read_text(encoding="utf-8")
 
 
 def test_runner_accepts_prompt_input(tmp_path):
