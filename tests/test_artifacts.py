@@ -5,10 +5,28 @@ from pathlib import Path
 
 from colosseum_extensions.ui.artifacts import (
     display_status,
+    find_run_directory,
     format_summary_text,
     load_run_browser_snapshot,
     load_run_snapshot,
 )
+
+
+def test_find_canceled_run(isolated_cwd: Path) -> None:
+    run = isolated_cwd / "outputs" / "2026-01-01_120000_smoke-incomplete"
+    run.mkdir(parents=True)
+    summary = {
+        "overall_result": "INCOMPLETE",
+        "interruption_reason": "Interrupted by user",
+        "suite_error": True,
+        "test_slot_counts": {"total": 2, "pass": 0, "fail": 1, "incomplete": 1},
+    }
+    (run / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+    assert find_run_directory(isolated_cwd, "smoke") == run
+    assert display_status(summary) == "INCOMPLETE"
+    details = format_summary_text(summary)
+    assert "Interrupted by user" in details
+    assert "Incomplete test slots: 1" in details
 
 
 def test_load_run_browser_snapshot_reads_statuses(isolated_cwd) -> None:
